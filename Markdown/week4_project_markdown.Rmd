@@ -1,0 +1,53 @@
+---
+title: "A Machine Learning Algorithim for Predicting Human Activity"
+author: "Davin O'Regan"
+date: "8/12/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+testPC <- read.csv("/Users/davinoregan30/Documents/data/pml/data/testPC.csv")
+phat_rf <- read.csv("/Users/davinoregan30/Documents/data/pml/data/phat_rf.csv")
+phat_vd2 <- read.csv("/Users/davinoregan30/Documents/data/pml/data/phat_vd2.csv")
+```
+
+## Predicted Results for 20 Test Cases
+
+My machine learning model predicts the following output for the [20 test cases](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) from the  [human activity recognition data (HAR) initiative](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har): 
+
+<p style="text-align: center;"><b>Table 1. Predicted Outcomes Using Test Cases</b></p>
+```{r, echo=F} 
+library(htmlTable)
+dd2 <- cbind(phat_vd2[1:10,2:3], phat_vd2[11:20,2:3])
+htmlTable(dd2,
+          cgroup = c("Set 1:10", "Set 11:20"),
+          n.cgroup = c(2, 2),
+          rnames = FALSE,
+          align="c|c",)
+``` 
+
+These predictions were arrived at by training a random forest model on the training data provided from the HAR initiative. Additionally, the training data was processed using principal components analysis, the modeling technique employed repeated cross validation with 10 folds, and the provided training data set was split into separate training and test sets prior to predicting the above 20 cases. I discuss each of these steps in turn.
+
+## Data Preparation and Pre-Processing
+
+First, I inspected the raw training data using cross tabs and histogram plots and found that large numbers of variables contained entirely empty or nonsensical observations. The missing observations were so extensive that imputation would be verge on data fabrication. These "NA", empty, or otherwise uninterpretable observations were dropped from the training set. This reduced the number of variables in the data from 160 to 60. 
+
+Next, I split the training data set into its own training and test sets so that I would be able to better assess the out-of-sample error of my model before applying the model to the 20 test cases provided for this exercise. This produced a training set of 14,718 observations and a validation set of 4,904.
+
+The data still contained a large number of variables and little information was provided about what they measured. Not being able to interpret their purpose and relationship to the outcome, I opted to process the remaining set of 60 variables using principal components analysis to create a more succinct set of predictors that still captured 95% of the variation in the training data set. The result was a set of 27 principal components on which to train a model. This PCA pre-processing was applied both to the training and validation data sets.
+
+## Model Selection
+
+I employed a random forest technique to model the type of human activity in the data. Random forest is an ideal technique for outcomes that are multi-class categorical variables and is useful for predicting outcomes (while being less useful for inferring and measuring relationships between independent and dependent variables). The random forest procedure is also useful when less is known about the features available for prediction, since the technique will privilege those features that split the data in the most optimal way. 
+
+To improve the accuracy of our model, 10-fold repeated cross-validation was employed in the random forest technique. Cross validation improves the accuracy of the model and minimizes bias in the results. Repeated cross folding reduces the noise that may result from differing splits in the data. Only 10 folds were used so that model variance would remain low.
+
+## Out-of-Sample Error
+
+Once the random forest model was trained, the out-of sample error was computed against the test set that had been split from the original training data. The model correctly classified over 99 percent of the 4,904 observations that had been split from the original training data. The predicted and actual outcomes in the test set can be seen below.
+
+````{r,  echo=F}
+knitr::kable(phat_rf, row.names=F,
+           caption = "Table 2. Predicted vs. Actual Outcomes, Test Set") 
+````
