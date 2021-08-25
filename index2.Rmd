@@ -1,0 +1,112 @@
+---
+title: "A Machine Learning Algorithim for Predicting Human Activity"
+author: "Davin O'Regan"
+date: "8/12/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(caret)
+library(ggplot2)
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+test <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+
+```
+
+## Introduction
+
+This brief note describes the training of a machine learning model to predict human activity from the  [human activity recognition data (HAR) initiative](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har). The model employed a random forest analytic technique using training data obtained from the HAR website. Random Forest was chosen due to its higher predictive accuracy after cross-validated comparisons against other modeling techniques. Prior to model fitting, the initial training data set was split into separate training and test sets. Additionally, a separate set of 20 test cases was predicted. I discuss each of my model preparation and execution steps in turn.
+
+## Data Preparation and Pre-Processing
+
+First, I inspected the raw training data using cross tabs and histogram plots and found that large numbers of variables contained entirely empty or nonsensical observations. The missing observations were so extensive that imputation would be verge on data fabrication. These "NA", empty, or otherwise uninterpretable observations were dropped from the training set. This reduced the number of variables in the data from 160 to 60. 
+
+````{r}
+#  Data frame prep for test set
+training2 <- training %>%  # Convert empty strings to NAs for exclusion
+  mutate_all(na_if, "#DIV/0!") %>%
+  mutate_all(na_if, "")
+training3 <- training2[,colSums(is.na(training2))==0] # Exclude NAs
+training$classe <- as.factor(training$classe)  # Change DV from character to a factor variable
+````
+
+Next, I split the training data set into its own training and test sets so that I would be able to better assess the out-of-sample error of my model before applying the model to the 20 test cases provided for this exercise. This produced a training set of 14,718 observations (70% of the initial training set) and a test set of 4,904.
+
+````{r}
+# Partition training set to analyze, test
+inTrain = createDataPartition(training$classe, p = 3/4)[[1]] 
+training4 = training3[ inTrain,] 
+testing = training3[-inTrain,]
+````
+
+## Model Selection and training
+
+Next, I trained a model using all available data in the training set and three different modeling techniques: linear discriminant analysis, gradient boosting, and random forest. Each model was run using 10-fold repeated cross validation. 
+
+````{r}
+library(parallel)
+library(doParallel)
+cluster <- parallel::makeCluster(2, setup_strategy = "sequential") # convention to leave 1 core for OS
+  # Set parallel processing parameters based on this: https://stackoverflow.com/questions/62730783/error-in-makepsockclusternames-spec-cluster-setup-failed-3-of-3-work
+  # And this https://github.com/lgreski/datasciencectacontent/blob/master/markdown/pml-randomForestPerformance.md
+registerDoParallel(cluster) # Commence parallel processing
+ctrl <- trainControl(method="repeatedcv", number=10, allowParallel = T) # Set cross validation parameters
+
+set.seed(1980)
+# Train RF model
+mrf <- train(classe~ ., method="rf", data=training4[,8:60], trControl=ctrl)
+
+# Train GBM model
+mgbm <- train(classe~ ., method="gbm", data=training4[,8:60], trControl=ctrl)
+
+# Train an LDA model
+mlda <- train(classe~., method="lda", data=training4[,8:60])
+
+````
+
+I then compared the out-of-sample performance of each of these models on the testing data. The random forest model had the highest predictive accuracy, as demonstrated in the below figure.
+
+````{r,  fig.align = 'center'}
+# Validate on Test Set
+phat_rf <- predict(mrf, testing[,8:60])
+phat_lda <- predict(mlda, testing[,8:60])
+phat_gbm <- predict(mgbm, testing[,8:60])
+
+rf_accuracy <- sum(phat_rf == testing$classe) /  length(testing$classe)
+lda_accuracy <- sum(phat_lda == testing$classe) /  length(testing$classe)
+gbm_accuracy <- sum(phat_gbm == testing$classe) /  length(testing$classe)
+
+acy <- data.frame(accuracy=c(rf_accuracy,lda_accuracy,gbm_accuracy), 
+                  model_type = c("Random Forest", "LDA", "GBM"))
+# Plot of accuracy levels
+a <- ggplot(acy,aes(x=model_type, y=accuracy)) +
+  geom_bar(stat="identity", fill="grey", alpha=.6, color="white", width=.5) +
+  geom_text(aes(label=paste(round(accuracy, 4))), 
+            position=position_dodge(width=0.9), vjust=-0.25) +
+  ylab("Accuracy") +
+  xlab("Model Type") +
+  theme_classic()
+a
+````
+
+## Out-of-Sample Error
+
+Once the random forest model was trained, the out-of-sample error (or out of) was computed against the test set that had been split from the original training data. The model correctly classified over 99 percent of the 4,904 observations that had been split from the original training data. The predicted and actual outcomes in the test set can be seen below.
+
+````{r,  echo=F}
+# Test validation set
+vd2 <- test %>%  # Convert empty strings to NAs for exclusion
+  mutate_all(na_if, "#DIV/0!") %>%
+  mutate_all(na_if, "")
+vd3 <- vd2[,colSums(is.na(vd2))==0] # Exclude NAs
+
+phat_vd <- predict(mrf, vd3[,8:60])
+rws <- c("ID","Predicted Activity")
+vd_accuracy <- sum(phat_vd == vd3$classe) /  length(vd3$classe)
+phat_vd2 <- data.frame(vd3$problem_id, phat_vd)
+colnames(phat_vd2) <- rws
+knitr::kable(phat_vd2, row.names=F,
+           caption = "Table 2. Predicted vs. Actual Outcomes, Test Set") 
+````
